@@ -3,64 +3,106 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>İnadına TV Pro</title>
+    <title>İnadına TV - Vercel</title>
     <style>
-        body { font-family: sans-serif; background: #000; color: #fff; margin: 0; padding: 10px; }
-        .input-box { display: flex; gap: 5px; margin-bottom: 20px; }
-        input { flex: 1; padding: 12px; border-radius: 5px; border: 1px solid #333; background: #111; color: #fff; }
-        button { padding: 12px; background: #e50914; border: none; color: #fff; border-radius: 5px; font-weight: bold; }
-        .show-header { text-align: center; margin-bottom: 20px; }
-        .show-header img { width: 100%; max-width: 300px; border-radius: 10px; }
-        .ep-list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .ep-item { background: #1a1a1a; padding: 15px; border-radius: 8px; text-align: center; font-size: 14px; border: 1px solid #333; }
-        #player { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 100; }
+        body { font-family: 'Segoe UI', sans-serif; background: #000; color: #fff; margin: 0; padding: 15px; }
+        .search-area { display: flex; gap: 10px; margin-bottom: 25px; }
+        input { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff; outline: none; }
+        button { padding: 12px 20px; background: #e50914; border: none; color: #fff; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        
+        .header-card { text-align: center; margin-bottom: 30px; }
+        .header-card img { width: 180px; border-radius: 12px; box-shadow: 0 0 20px rgba(229,9,20,0.3); }
+        
+        .ep-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; margin-top: 10px; }
+        .ep-btn { background: #222; border: 1px solid #444; color: #fff; padding: 10px; border-radius: 6px; text-align: center; cursor: pointer; font-size: 13px; }
+        .ep-btn:hover { background: #e50914; border-color: #e50914; }
+        
+        #player-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 1000; }
         iframe { width: 100%; height: 100%; border: none; }
-        .close-btn { position: absolute; top: 10px; right: 10px; background: red; color: #fff; padding: 10px; border-radius: 50%; z-index: 101; }
+        .close-player { position: absolute; top: 15px; right: 15px; background: rgba(255,0,0,0.8); color: #fff; padding: 8px 15px; border-radius: 5px; cursor: pointer; z-index: 1001; }
+        
+        .loading { text-align: center; color: #e50914; display: none; }
     </style>
 </head>
 <body>
 
-    <div class="input-box">
-        <input type="text" id="url" placeholder="Dizi Linkini Yapıştır...">
-        <button onclick="loadShow()">YÜKLE</button>
+    <div class="search-area">
+        <input type="text" id="targetUrl" placeholder="Dizipal dizi linkini yapıştır...">
+        <button onclick="fetchShow()">GİT</button>
     </div>
 
-    <div id="result"></div>
-    <div id="player">
-        <div class="close-btn" onclick="document.getElementById('player').style.display='none'; document.querySelector('iframe').src=''; ">X</div>
-        <iframe src="" allowfullscreen></iframe>
+    <div id="loading" class="loading">Veriler çekiliyor, lütfen bekle...</div>
+    <div id="content"></div>
+
+    <div id="player-overlay">
+        <div class="close-player" onclick="closeVideo()">KAPAT</div>
+        <div id="iframe-container" style="width:100%; height:100%;"></div>
     </div>
 
 <script>
-    async function loadShow() {
-        const url = document.getElementById('url').value;
-        const res = await fetch(`/api/scrape?url=${encodeURIComponent(url)}`);
-        const data = await res.json();
-        
-        let html = `<div class="show-header">
-            <img src="${data.cover}">
-            <h1>${data.title}</h1>
-        </div><div class="ep-list">`;
-        
-        data.episodes.forEach(ep => {
-            html += `<div class="ep-item" onclick="play('${ep.url}')">
-                S${ep.season} - B${ep.episode}
-            </div>`;
-        });
-        
-        html += `</div>`;
-        document.getElementById('result').innerHTML = html;
+    async function fetchShow() {
+        const url = document.getElementById('targetUrl').value;
+        if(!url) return;
+
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('content').innerHTML = '';
+
+        try {
+            const res = await fetch(`/api/scrape?url=${encodeURIComponent(url)}`);
+            const data = await res.json();
+            
+            let html = `
+                <div class="header-card">
+                    <img src="${data.cover || 'https://via.placeholder.com/200x300?text=Resim+Yok'}">
+                    <h2>${data.title}</h2>
+                </div>
+            `;
+
+            // Bölümleri Sezonlara Göre Grupla
+            const seasons = {};
+            data.episodes.forEach(ep => {
+                if(!seasons[ep.season]) seasons[ep.season] = [];
+                seasons[ep.season].push(ep);
+            });
+
+            for(let s in seasons) {
+                html += `<h3>Sezon ${s}</h3><div class="ep-grid">`;
+                seasons[s].forEach(ep => {
+                    html += `<div class="ep-btn" onclick="playVideo('${ep.url}')">Bölüm ${ep.episode}</div>`;
+                });
+                html += `</div>`;
+            }
+
+            document.getElementById('content').innerHTML = html;
+        } catch (e) {
+            alert("Hata oluştu! Linki veya internetini kontrol et.");
+        } finally {
+            document.getElementById('loading').style.display = 'none';
+        }
     }
 
-    async function play(epUrl) {
-        const res = await fetch(`/api/scrape?url=${encodeURIComponent(epUrl)}&type=video`);
-        const data = await res.json();
-        if(data.videoUrl) {
-            document.querySelector('iframe').src = data.videoUrl;
-            document.getElementById('player').style.display = 'block';
-        } else {
-            alert("Video bulunamadı!");
+    async function playVideo(url) {
+        document.getElementById('loading').style.display = 'block';
+        try {
+            const res = await fetch(`/api/scrape?url=${encodeURIComponent(url)}&type=video`);
+            const data = await res.json();
+            
+            if(data.videoUrl) {
+                document.getElementById('iframe-container').innerHTML = `<iframe src="${data.videoUrl}" allowfullscreen></iframe>`;
+                document.getElementById('player-overlay').style.display = 'block';
+            } else {
+                alert("Video kaynağı bulunamadı! Sayfada reklam engelleyici olabilir.");
+            }
+        } catch (e) {
+            alert("Video yüklenemedi.");
+        } finally {
+            document.getElementById('loading').style.display = 'none';
         }
+    }
+
+    function closeVideo() {
+        document.getElementById('player-overlay').style.display = 'none';
+        document.getElementById('iframe-container').innerHTML = '';
     }
 </script>
 </body>
